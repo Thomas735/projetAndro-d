@@ -12,7 +12,11 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
-
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +44,17 @@ public class MainActivity extends AppCompatActivity {
         btnStartServer = findViewById(R.id.btn_start_server);
         btnStartClient = findViewById(R.id.btn_start_client);
         tvStatus = findViewById(R.id.tv_status);
+
+        // --- NOUVEAU : Demande de permission pour Android 12+ ---
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN
+                }, 1);
+            }
+        }
+        // ---------------------------------------------------------
 
         // Initialisation du Bluetooth
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
