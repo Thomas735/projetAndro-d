@@ -29,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
 
     private Button btnStartServer;
     private Button btnStartClient;
-    private Button btnStartDomotique;
+
     private TextView tvStatus;
 
     private BluetoothAdapter bluetoothAdapter;
@@ -46,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        btnStartDomotique = findViewById(R.id.btn_start);
+
         btnStartServer = findViewById(R.id.btn_start_server);
         btnStartClient = findViewById(R.id.btn_start_client);
         tvStatus = findViewById(R.id.tv_status);
@@ -56,10 +56,6 @@ public class MainActivity extends AppCompatActivity {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (bluetoothAdapter == null) return;
 
-        btnStartDomotique.setOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, MonitoringActivity.class);
-            startActivity(intent);
-        });
 
         btnStartServer.setOnClickListener(v -> {
             if (checkBluetooth()) {
@@ -94,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void prepareConnectionUI() {
         runOnUiThread(() -> {
-            btnStartDomotique.setVisibility(View.GONE);
+
             btnStartServer.setVisibility(View.GONE);
             btnStartClient.setVisibility(View.GONE);
             tvStatus.setVisibility(View.VISIBLE);
@@ -112,7 +108,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void resetUI() {
         runOnUiThread(() -> {
-            btnStartDomotique.setVisibility(View.VISIBLE);
+
             btnStartServer.setVisibility(View.VISIBLE);
             btnStartClient.setVisibility(View.VISIBLE);
             tvStatus.setVisibility(View.GONE);
@@ -202,6 +198,10 @@ public class MainActivity extends AppCompatActivity {
         updateUIConnected(role);
         connectedThread = new ConnectedThread(socket);
         connectedThread.start();
+        
+        Intent intent = new Intent(MainActivity.this, MonitoringActivity.class);
+        intent.putExtra("ROLE", role);
+        startActivity(intent);
     }
 
     // Thread pour la gestion des flux de données après connexion

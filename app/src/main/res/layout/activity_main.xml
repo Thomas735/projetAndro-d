@@ -26,16 +26,6 @@
         android:textColor="#757575"
         android:layout_marginBottom="48dp"/>
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btn_start"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="DOMOTIQUE (HTTP)"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        app:cornerRadius="12dp"
-        app:backgroundTint="#1E88E5"
-        android:layout_marginBottom="16dp"/>
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_start_server"
