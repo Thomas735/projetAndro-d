@@ -19,10 +19,11 @@ import android.os.Build;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
 
-// L'annotation ci-dessous dit à Android Studio d'ignorer les alertes rouges de permissions pour ce TP
 @SuppressLint("MissingPermission")
 public class MainActivity extends AppCompatActivity {
 
@@ -31,12 +32,14 @@ public class MainActivity extends AppCompatActivity {
     private Button btnStartDomotique;
     private TextView tvStatus;
 
-    // L'adaptateur Bluetooth local
     private BluetoothAdapter bluetoothAdapter;
 
-    // L'UUID commun au Serveur et au Client (le mot de passe secret)
+    // UUID partagé entre le serveur et le client
     private static final UUID MY_UUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
     private static final String NAME = "MonServeurMaison";
+
+    // Thread de communication statique pour l'échange de données
+    private static ConnectedThread connectedThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,64 +51,75 @@ public class MainActivity extends AppCompatActivity {
         btnStartClient = findViewById(R.id.btn_start_client);
         tvStatus = findViewById(R.id.tv_status);
 
-        // --- NOUVEAU : Demande de permission pour Android 12+ ---
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{
-                        Manifest.permission.BLUETOOTH_CONNECT,
-                        Manifest.permission.BLUETOOTH_SCAN
-                }, 1);
-            }
-        }
-        // ---------------------------------------------------------
+        checkPermissions();
 
-        // Initialisation du Bluetooth
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (bluetoothAdapter == null) {
-            Toast.makeText(this, "Cet appareil ne supporte pas le Bluetooth", Toast.LENGTH_LONG).show();
-        }
+        if (bluetoothAdapter == null) return;
 
-        btnStartDomotique.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(MainActivity.this, MonitoringActivity.class);
-                startActivity(intent);
+        btnStartDomotique.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, MonitoringActivity.class);
+            startActivity(intent);
+        });
+
+        btnStartServer.setOnClickListener(v -> {
+            if (checkBluetooth()) {
+                prepareConnectionUI();
+                new AcceptThread().start();
             }
         });
 
-        btnStartServer.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                updateUIForWaiting("SERVEUR EN ATTENTE\n*Attente de connexion d'un client*");
-                startServerMode();
-            }
-        });
-
-        btnStartClient.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                updateUIForWaiting("CLIENT EN ATTENTE\n*Attente de connexion au serveur*");
+        btnStartClient.setOnClickListener(v -> {
+            if (checkBluetooth()) {
+                prepareConnectionUI();
                 startClientMode();
             }
         });
     }
 
-    private void updateUIForWaiting(String statusMessage) {
-        btnStartDomotique.setVisibility(View.GONE);
-        btnStartServer.setVisibility(View.GONE);
-        btnStartClient.setVisibility(View.GONE);
-        tvStatus.setVisibility(View.VISIBLE);
-        tvStatus.setText(statusMessage);
+    private void checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.BLUETOOTH_SCAN,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                }, 1);
+            }
+        }
     }
 
-    // ==========================================
-    // LOGIQUE SERVEUR (Le Hub)
-    // ==========================================
-    private void startServerMode() {
-        AcceptThread acceptThread = new AcceptThread();
-        acceptThread.start();
+    private boolean checkBluetooth() {
+        return bluetoothAdapter != null && bluetoothAdapter.isEnabled();
     }
 
+    private void prepareConnectionUI() {
+        runOnUiThread(() -> {
+            btnStartDomotique.setVisibility(View.GONE);
+            btnStartServer.setVisibility(View.GONE);
+            btnStartClient.setVisibility(View.GONE);
+            tvStatus.setVisibility(View.VISIBLE);
+            tvStatus.setText("");
+        });
+    }
+
+    private void updateUIConnected(String role) {
+        runOnUiThread(() -> {
+            tvStatus.setText("STATUT : CONNECTÉ (" + role + ")");
+            tvStatus.setTextColor(getResources().getColor(android.R.color.holo_green_dark));
+            Toast.makeText(this, "Connexion établie", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void resetUI() {
+        runOnUiThread(() -> {
+            btnStartDomotique.setVisibility(View.VISIBLE);
+            btnStartServer.setVisibility(View.VISIBLE);
+            btnStartClient.setVisibility(View.VISIBLE);
+            tvStatus.setVisibility(View.GONE);
+        });
+    }
+
+    // Thread serveur pour l'écoute des connexions entrantes
     private class AcceptThread extends Thread {
         private final BluetoothServerSocket mmServerSocket;
 
@@ -114,47 +128,38 @@ public class MainActivity extends AppCompatActivity {
             try {
                 tmp = bluetoothAdapter.listenUsingRfcommWithServiceRecord(NAME, MY_UUID);
             } catch (IOException e) {
-                Log.e("BluetoothServeur", "Erreur lors de la création du ServerSocket", e);
+                Log.e("BT_SERVER", "Erreur écoute", e);
             }
             mmServerSocket = tmp;
         }
 
         public void run() {
             BluetoothSocket socket = null;
-            while (true) {
-                try {
-                    Log.d("BluetoothServeur", "Serveur en écoute...");
-                    socket = mmServerSocket.accept();
-                } catch (IOException e) {
-                    Log.e("BluetoothServeur", "Erreur lors de l'acceptation", e);
-                    break;
-                }
+            try {
+                socket = mmServerSocket.accept();
+            } catch (IOException e) {
+                Log.e("BT_SERVER", "Accept échoué", e);
+            }
 
-                if (socket != null) {
-                    Log.d("BluetoothServeur", "Connexion acceptée avec succès !");
-                    // TODO: Étape 4 - Gérer le socket pour lire/écrire
-                    try {
-                        mmServerSocket.close();
-                    } catch (IOException e) {
-                        Log.e("BluetoothServeur", "Erreur lors de la fermeture", e);
-                    }
-                    break;
-                }
+            if (socket != null) {
+                manageConnectedSocket(socket, "SERVEUR");
+                try {
+                    mmServerSocket.close();
+                } catch (IOException e) { }
             }
         }
     }
 
-    // ==========================================
-    // LOGIQUE CLIENT (La Télécommande)
-    // ==========================================
+    // Recherche et connexion au serveur
     private void startClientMode() {
         Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
         BluetoothDevice targetDevice = null;
 
-        if (!pairedDevices.isEmpty()) {
+        if (pairedDevices != null && !pairedDevices.isEmpty()) {
             for (BluetoothDevice device : pairedDevices) {
-                // ATTENTION : Remplace "Nom_Du_Tel_Serveur" par le vrai nom du téléphone Hub
-                if (device.getName() != null && device.getName().equals("serveur")) {
+                String name = device.getName();
+                // Recherche spécifique du téléphone serveur ou client
+                if (name != null && (name.contains("Client") || name.contains("S22+_Samoht"))) {
                     targetDevice = device;
                     break;
                 }
@@ -162,49 +167,79 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (targetDevice != null) {
-            ConnectThread connectThread = new ConnectThread(targetDevice);
-            connectThread.start();
+            new ConnectThread(targetDevice).start();
         } else {
             Toast.makeText(this, "Hub non trouvé dans les appareils appairés", Toast.LENGTH_LONG).show();
-            btnStartDomotique.setVisibility(View.VISIBLE);
-            btnStartServer.setVisibility(View.VISIBLE);
-            btnStartClient.setVisibility(View.VISIBLE);
-            tvStatus.setVisibility(View.GONE);
+            resetUI();
         }
     }
 
+    // Thread client pour initier la connexion
     private class ConnectThread extends Thread {
         private final BluetoothSocket mmSocket;
-        private final BluetoothDevice mmDevice;
 
         public ConnectThread(BluetoothDevice device) {
             BluetoothSocket tmp = null;
-            mmDevice = device;
             try {
                 tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
-            } catch (IOException e) {
-                Log.e("BluetoothClient", "Erreur de création du socket", e);
-            }
+            } catch (IOException e) { }
             mmSocket = tmp;
         }
 
         public void run() {
             bluetoothAdapter.cancelDiscovery();
             try {
-                Log.d("BluetoothClient", "Tentative de connexion au Hub...");
                 mmSocket.connect();
-                Log.d("BluetoothClient", "Connecté au Hub avec succès !");
+                manageConnectedSocket(mmSocket, "CLIENT");
+            } catch (IOException e) {
+                Log.e("BT_CLIENT", "Connexion échouée", e);
+                resetUI();
+            }
+        }
+    }
 
-                // TODO: Étape 4 - Gérer le socket pour lire/écrire
+    private void manageConnectedSocket(BluetoothSocket socket, String role) {
+        updateUIConnected(role);
+        connectedThread = new ConnectedThread(socket);
+        connectedThread.start();
+    }
 
-            } catch (IOException connectException) {
-                Log.e("BluetoothClient", "Impossible de se connecter", connectException);
+    // Thread pour la gestion des flux de données après connexion
+    public static class ConnectedThread extends Thread {
+        private final BluetoothSocket mmSocket;
+        private final InputStream mmInStream;
+        private final OutputStream mmOutStream;
+
+        public ConnectedThread(BluetoothSocket socket) {
+            mmSocket = socket;
+            InputStream tmpIn = null;
+            OutputStream tmpOut = null;
+            try {
+                tmpIn = socket.getInputStream();
+                tmpOut = socket.getOutputStream();
+            } catch (IOException e) { }
+            mmInStream = tmpIn;
+            mmOutStream = tmpOut;
+        }
+
+        public void run() {
+            byte[] buffer = new byte[1024];
+            int bytes;
+            while (true) {
                 try {
-                    mmSocket.close();
-                } catch (IOException closeException) {
-                    Log.e("BluetoothClient", "Erreur fermeture socket", closeException);
+                    bytes = mmInStream.read(buffer);
+                    String msg = new String(buffer, 0, bytes);
+                    Log.d("BT_COMM", "Message reçu : " + msg);
+                } catch (IOException e) {
+                    break;
                 }
             }
+        }
+
+        public void write(byte[] bytes) {
+            try {
+                mmOutStream.write(bytes);
+            } catch (IOException e) { }
         }
     }
 }
